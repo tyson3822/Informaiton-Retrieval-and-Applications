@@ -507,17 +507,13 @@ void calculateConsineSimilarityScore(indri::collection::Repository& r ){
   indri::index::DocListFileIterator* iter = index->docListFileIterator();
   iter->startIteration();
 
-
-  indri::collection::CompressedCollection* collection = r.collection();
-  indri::api::ParsedDocument* document;
+  indri::server::LocalQueryServer local(r);
 
   while( !iter->finished() ) {
     indri::index::DocListFileIterator::DocListData* entry = iter->currentEntry();
     indri::index::TermData* termData = entry->termData;
 
     entry->iterator->startIteration();
-
-    //DEBUG  std::cout << "term = " << termData->term;
 
     //to get idf score
     tempIDF.term = termData -> term;
@@ -529,13 +525,11 @@ void calculateConsineSimilarityScore(indri::collection::Repository& r ){
 
     while( !entry->iterator->finished() ) {
       indri::index::DocListIterator::DocumentData* doc = entry->iterator->currentEntry();
-
-      document = collection->retrieve( doc->document );
-
-      // //to get tf score
+        
+      //to get tf score
       tempTF.term = termData -> term;
       tempTF.document = doc -> document;
-      tempTF.score = calculateTFScore(doc->positions.size(), document->textLength);
+      tempTF.score = calculateTFScore(doc->positions.size(), local.documentLength(doc->document ));
       //vectorTFs.push_back(tempTF);
 
       //to get TFIDF score
@@ -543,11 +537,9 @@ void calculateConsineSimilarityScore(indri::collection::Repository& r ){
       tempTF_IDF.document = doc -> document;
       tempTF_IDF.score = calculateTFIDFScore(tempTF.score , tempIDF.score);
       vectorTFIDFs.push_back(tempTF_IDF);
-      // DEBUG cout << "term = " << tempTF_IDF.term << ", document = " << tempTF_IDF.document << 
-      //   endl << "TF score = " << tempTF.score << ", IDF score = " << tempIDF.score << ", TFIDF Score = " <<  tempTF_IDF.score << endl;
-      cout << tempTF_IDF.score << endl;
-
-      delete document;
+      DEBUG cout << "term = " << tempTF_IDF.term << ", document = " << tempTF_IDF.document << 
+        endl << "TF score = " << tempTF.score << ", IDF score = " << tempIDF.score << ", TFIDF Score = " <<  tempTF_IDF.score << endl;
+      //cout << tempTF_IDF.score << endl;
 
       entry->iterator->nextEntry();
     }
