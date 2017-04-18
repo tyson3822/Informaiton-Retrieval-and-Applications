@@ -23,9 +23,11 @@
 #include "indri/LocalQueryServer.hpp"
 #include "indri/ScopedLock.hpp"
 #include "indri/QueryEnvironment.hpp"
+
 #include <iostream>
 
 bool isDEBUG = false;
+std::vector<std::string> vectorQuery;
 
 void print_expression_count( const std::string& indexName, const std::string& expression ) {
   indri::api::QueryEnvironment env;
@@ -480,71 +482,187 @@ public:
   long double score;
 };
 
+class SimilarityScore
+{
+public:
+  int document;
+  double dotProduct;
+  double queryAbs;
+  double docAbs;
+  double simScore;
+};
+
 long double calculateTFScore(double termCount, double documentCount){
   return termCount / documentCount;
 }
 
 long double calculateIDFScore(double totalDocumentCount, double termAppearCount){
-  return log(totalDocumentCount / termAppearCount);
+  return 1 + log(totalDocumentCount / termAppearCount);
 }
 
 long double calculateTFIDFScore(double TFScore, double IDFScore){
   return TFScore * IDFScore;
 }
 
-void calculateConsineSimilarityScore(indri::collection::Repository& r ){
-  std::vector< TFScore >  vectorTFs;
-  std::vector< IDFScore > vectorIDFs;
-  std::vector<TF_IDFScore> vectorTFIDFs;
+// void print_tfidf_score(indri::collection::Repository& r ){
 
+//   TFScore tempTF;
+//   IDFScore tempIDF;
+//   TF_IDFScore tempTF_IDF;
+
+//   indri::collection::Repository::index_state state = r.indexes();
+
+//   indri::index::Index* index = (*state)[0];
+//   indri::index::DocListFileIterator* iter = index->docListFileIterator();
+//   iter->startIteration();
+
+//   indri::server::LocalQueryServer local(r);
+
+//   while( !iter->finished() ) {
+//     indri::index::DocListFileIterator::DocListData* entry = iter->currentEntry();
+//     indri::index::TermData* termData = entry->termData;
+
+//     entry->iterator->startIteration();
+
+//     //to get idf score
+//     tempIDF.term = termData -> term;
+//     tempIDF.score = calculateIDFScore(index->documentCount(), termData->corpus.documentCount);
+
+//     while( !entry->iterator->finished() ) {
+//       indri::index::DocListIterator::DocumentData* doc = entry->iterator->currentEntry();
+        
+//       //to get tf score
+//       tempTF.term = termData -> term;
+//       tempTF.document = doc -> document;
+//       tempTF.score = calculateTFScore(doc->positions.size(), local.documentLength(doc->document ));
+
+//       //to get TFIDF score
+//       tempTF_IDF.term = termData -> term;
+//       tempTF_IDF.document = doc -> document;
+//       tempTF_IDF.score = calculateTFIDFScore(tempTF.score , tempIDF.score);
+//       DEBUG cout << tempTF_IDF.term << " " 
+//                     << tempTF_IDF.document <<  " " 
+//                     <<  tempTF_IDF.score << endl;
+
+//       entry->iterator->nextEntry();
+//     }
+
+//     iter->nextEntry();
+//   }
+
+//   delete iter;
+// }
+
+double calculateQueryTFScore(std::vector<string> vectorQuery, std::string query){
+  int queryCount = 0;
+  for(int queryIndex =0; queryIndex < vectorQuery.size(); queryIndex++)
+    if(vectorQuery[queryIndex] == query) 
+      queryCount++;
+
+  return ((double)queryCount / (double)vectorQuery.size()); 
+}
+
+void calculateConsineSimilarityScore(indri::collection::Repository& r){
+  //to temp the query score
+  double queryTFScore, queryIDFScore, queryTFIDFScore;
+
+  //to save the all of similarity score
+  std:: vector<SimilarityScore> vectorSimScore; 
+
+  //to temp the score
   TFScore tempTF;
   IDFScore tempIDF;
   TF_IDFScore tempTF_IDF;
+  SimilarityScore tempSimScore;
+
+  indri::server::LocalQueryServer local(r);
 
   indri::collection::Repository::index_state state = r.indexes();
-
   indri::index::Index* index = (*state)[0];
   indri::index::DocListFileIterator* iter = index->docListFileIterator();
   iter->startIteration();
 
-  indri::server::LocalQueryServer local(r);
-
+  //run all of the term in the processed data
   while( !iter->finished() ) {
     indri::index::DocListFileIterator::DocListData* entry = iter->currentEntry();
     indri::index::TermData* termData = entry->termData;
 
+    //start the term iterator
     entry->iterator->startIteration();
 
-    //to get idf score
-    tempIDF.term = termData -> term;
+    //to get term idf score
     tempIDF.score = calculateIDFScore(index->documentCount(), termData->corpus.documentCount);
-    vectorIDFs.push_back(tempIDF);
-    //DEBUG cout << calculateIDFScore(index->documentCount(), termData->corpus.documentCount) << endl; 
-    //DEBUG cout << index->documentCount() << std::endl;
-    //DEBUG cout <<  termData->corpus.documentCount <<  std::endl;
 
+    //run all of the docs witch exist term
     while( !entry->iterator->finished() ) {
-      indri::index::DocListIterator::DocumentData* doc = entry->iterator->currentEntry();
-        
-      //to get tf score
-      tempTF.term = termData -> term;
-      tempTF.document = doc -> document;
-      tempTF.score = calculateTFScore(doc->positions.size(), local.documentLength(doc->document ));
-      //vectorTFs.push_back(tempTF);
+      //to run all query term
+      for(int queryIndex = 0; queryIndex < vectorQuery.size(); queryIndex++){
+        //if  current term is equal the query term
+        if((termData->term == vectorQuery[queryIndex])){
+          indri::index::DocListIterator::DocumentData* doc = entry->iterator->currentEntry();
 
-      //to get TFIDF score
-      tempTF_IDF.term = termData -> term;
-      tempTF_IDF.document = doc -> document;
-      tempTF_IDF.score = calculateTFIDFScore(tempTF.score , tempIDF.score);
-      vectorTFIDFs.push_back(tempTF_IDF);
-      DEBUG cout << "term = " << tempTF_IDF.term << ", document = " << tempTF_IDF.document << 
-        endl << "TF score = " << tempTF.score << ", IDF score = " << tempIDF.score << ", TFIDF Score = " <<  tempTF_IDF.score << endl;
-      //cout << tempTF_IDF.score << endl;
+          //to get query tfidf score
+          queryTFScore = calculateQueryTFScore(vectorQuery, vectorQuery[queryIndex]);
+          queryIDFScore = 1;
+          queryTFIDFScore = queryTFScore * queryIDFScore;
 
+          //to get tf score
+          tempTF.score = calculateTFScore(doc->positions.size(), local.documentLength(doc->document ));
+
+          //to get TFIDF score
+          tempTF_IDF.score = calculateTFIDFScore(tempTF.score , tempIDF.score);
+
+          //to get similarity score is exist or not
+          bool isDocSimExist = false;
+          for(int simIndex = 0;simIndex < vectorSimScore.size(); simIndex++){
+            if(vectorSimScore[simIndex].document == tempTF_IDF.document){
+              isDocSimExist = true;
+            }//end if
+          }//end for
+
+          //if not exist, then create one
+          if (!isDocSimExist){
+            tempSimScore.document = doc -> document;
+            tempSimScore.dotProduct = 0;
+            tempSimScore.queryAbs = 0;
+            tempSimScore.docAbs = 0;
+            tempSimScore.simScore =0;
+            vectorSimScore.push_back(tempSimScore);
+          }//end if
+
+          //calculate similarity score
+          for(int simIndex = 0;simIndex < vectorSimScore.size(); simIndex++){
+            if(vectorSimScore[simIndex].document == doc->document){
+              vectorSimScore[simIndex].dotProduct += (tempTF_IDF.score * queryTFIDFScore);
+              vectorSimScore[simIndex].queryAbs += (queryTFIDFScore * queryTFIDFScore);
+              vectorSimScore[simIndex].docAbs += (tempTF_IDF.score * tempTF_IDF.score);
+              vectorSimScore[simIndex].simScore = ( vectorSimScore[simIndex].dotProduct / ( sqrt(vectorSimScore[simIndex].queryAbs) * sqrt(vectorSimScore[simIndex].docAbs) ));
+            }//end if
+          }//end for
+
+        }//end if
+      }//end for
+
+      //to next doc
       entry->iterator->nextEntry();
-    }
 
+    }//end while 
+
+    //to next term
     iter->nextEntry();
+
+  }//end while
+
+  //print all query term
+  cout << "-Query : '";
+  for(int index = 0; index < vectorQuery.size(); index++)
+    cout << vectorQuery[index] << " " ;
+  cout << "'" << endl;
+
+  //print all similarity score result
+  cout <<  "-Result : " << endl;
+  for(int simIndex = 0; simIndex < vectorSimScore.size(); simIndex++){
+    cout  << "  " << vectorSimScore[simIndex].document << "  " <<vectorSimScore[simIndex].simScore << "." << endl; 
   }
 
   delete iter;
@@ -647,7 +765,8 @@ int main( int argc, char** argv ) {
         REQUIRE_ARGS(4);
         print_repository_stats( r );
       } else if( command == "sim"){
-        REQUIRE_ARGS(4);
+        for(int index = 4; index < argc; index++)
+          vectorQuery.push_back(argv[index]);
         calculateConsineSimilarityScore(r);
       } else {
         r.close();
